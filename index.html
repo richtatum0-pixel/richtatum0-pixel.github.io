@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Siège des Tours – Jeu de stratégie 1v1 gratuit</title>
+<meta name="description" content="Recrute des troupes, défends ton château et démolis celui de l'ennemi. Jeu de stratégie en duel, gratuit dans le navigateur.">
+<!-- ADSENSE : remplace ca-pub-XXXXXXXXXXXXXXXX par ton identifiant éditeur -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+<style>
+:root{--bg:#1d2433;--panel:#2a3348;--ink:#f4efe3;--muted:#9aa5bd;--gold:#f2b84b;--red:#e2574c;--blue:#4c8be2}
+@media (prefers-color-scheme: light){:root{--bg:#dfe6f2;--panel:#ffffff;--ink:#1d2433;--muted:#56627d}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS",system-ui,sans-serif}
+body{padding:env(safe-area-inset-top,0) 12px env(safe-area-inset-bottom,0)}
+main{max-width:520px;margin:0 auto;padding:12px 0}
+h1{font-size:1.4rem;margin:4px 0 10px;letter-spacing:.5px}
+#stage{position:relative;border-radius:14px;overflow:hidden;background:#8ec9f0}
+canvas{display:block;width:100%;height:auto}
+#overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(20,26,40,.78);color:#f4efe3;text-align:center;padding:16px}
+#overlay h2{margin:0;font-size:1.6rem}
+#overlay p{margin:0;max-width:300px;font-size:.95rem;line-height:1.4}
+button{font:inherit;cursor:pointer;border:0;border-radius:12px}
+#play{background:var(--gold);color:#2a1d05;padding:12px 28px;font-weight:700;font-size:1.05rem}
+#energy{height:14px;background:var(--panel);border-radius:8px;margin:10px 0;overflow:hidden;position:relative}
+#energy i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7a5cf0,#b794ff);transition:width .1s}
+#energy b{position:absolute;inset:0;text-align:center;font-size:.7rem;line-height:14px}
+#cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.card{background:var(--panel);color:var(--ink);padding:10px 6px;text-align:center;border:2px solid transparent;touch-action:manipulation}
+.card strong{display:block;font-size:.95rem}
+.card span{display:block;font-size:.75rem;color:var(--muted);margin-top:2px}
+.card.off{opacity:.45}
+.card:focus-visible,#play:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.ad{margin:14px 0;min-height:100px;text-align:center}
+.info{font-size:.85rem;color:var(--muted);line-height:1.5}
+.info h2{font-size:1rem;color:var(--ink)}
+footer{font-size:.75rem;color:var(--muted);margin-top:16px}
+footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>Siège des Tours</h1>
+
+<div id="stage">
+  <canvas id="c" width="800" height="520" aria-label="Terrain de jeu"></canvas>
+  <div id="overlay">
+    <h2 id="ot">Siège des Tours</h2>
+    <p id="om">Envoie tes troupes, détruis le château rouge et protège le tien. Victoires : <span id="wins">0</span></p>
+    <button id="play">Jouer</button>
+  </div>
+</div>
+
+<div id="energy"><i id="ebar"></i><b id="etxt">0 / 10</b></div>
+<div id="cards">
+  <button class="card" data-t="sword"><strong>Soldat</strong><span>3 • équilibré</span></button>
+  <button class="card" data-t="archer"><strong>Archer</strong><span>4 • à distance</span></button>
+  <button class="card" data-t="ram"><strong>Bélier</strong><span>6 • casse les murs</span></button>
+</div>
+
+<!-- Bloc publicitaire : placé SOUS les commandes, jamais au-dessus du jeu -->
+<div class="ad">
+  <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="0000000000" data-ad-format="auto" data-full-width-responsive="true"></ins>
+</div>
+
+<section class="info">
+  <h2>Comment jouer</h2>
+  <p>L'énergie violette se recharge toute seule. Touche une carte pour envoyer une troupe vers le château ennemi. Les soldats sont polyvalents, les archers tirent de loin, les béliers encaissent et font très mal aux murs. Détruis le château rouge avant que le tien tombe.</p>
+</section>
+
+<footer><a href="/confidentialite.html">Politique de confidentialité</a> · <a href="/contact.html">Contact</a></footer>
+</main>
+
+<script>
+(function(){
+try{(adsbygoogle=window.adsbygoogle||[]).push({});}catch(e){}
+
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+const W=800,H=520,GY=400;
+const TYPES={
+  sword:{cost:3,hp:70,dmg:9,range:34,speed:55,cd:.6,castle:1,r:14},
+  archer:{cost:4,hp:40,dmg:8,range:190,speed:45,cd:.9,castle:1,r:12},
+  ram:{cost:6,hp:200,dmg:4,range:34,speed:34,cd:1.2,castle:9,r:20}
+};
+const ENERGY_MAX=10;
+let units,fx,castles,energy,running,last,aiT,over;
+
+function reset(){
+  units=[];fx=[];energy=5;aiT=2;over=false;
+  castles=[{team:0,x:70,hp:500,max:500},{team:1,x:730,hp:500,max:500}];
+}
+function spawn(team,t){
+  const d=TYPES[t];
+  units.push({team,t,x:team?690:110,hp:d.hp,cd:0,...d});
+}
+function dist(a,b){return Math.abs(a-b)}
+
+function update(dt){
+  energy=Math.min(ENERGY_MAX,energy+dt*1.1);
+  aiT-=dt;
+  if(aiT<=0){
+    const opts=['sword','sword','archer','ram'];
+    const t=opts[Math.floor(Math.random()*opts.length)];
+    const e=TYPES[t];
+    // l'IA garde un peu de marge pour rester battable
+    if(Math.random()<.85){spawn(1,t);}
+    aiT=e.cost*0.95+Math.random()*1.2;
+  }
+  for(const u of units){
+    u.cd-=dt;
+    const dir=u.team?-1:1;
+    let target=null,best=1e9;
+    for(const o of units){
+      if(o.team===u.team||o.hp<=0)continue;
+      const d=dist(u.x,o.x);
+      if(d<best){best=d;target=o}
+    }
+    const enemyC=castles[u.team?0:1];
+    const cd=dist(u.x,enemyC.x)-30;
+    if(target&&best<=u.range){
+      if(u.cd<=0){
+        target.hp-=u.dmg;u.cd=u.cooldown||u.cd;u.cd=TYPES[u.t].cd;
+        if(u.t==='archer')fx.push({x1:u.x,y1:GY-30,x2:target.x,y2:GY-20,l:.12});
+        else fx.push({x1:target.x,y1:GY-20,l:.12,hit:1});
+      }
+    }else if(cd<=u.range){
+      if(u.cd<=0){
+        enemyC.hp-=u.dmg*u.castle;u.cd=TYPES[u.t].cd;
+        fx.push({x1:enemyC.x+(u.team?30:-30),y1:GY-40,l:.15,hit:1});
+      }
+    }else{
+      u.x+=dir*u.speed*dt;
+    }
+  }
+  units=units.filter(u=>u.hp>0);
+  fx.forEach(f=>f.l-=dt);fx=fx.filter(f=>f.l>0);
+  // les châteaux se défendent légèrement
+  for(const c of castles){
+    c.cd=(c.cd||0)-dt;
+    if(c.cd<=0){
+      let t=null,b=230;
+      for(const o of units){if(o.team!==c.team){const d=dist(o.x,c.x);if(d<b){b=d;t=o}}}
+      if(t){t.hp-=7;c.cd=1.1;fx.push({x1:c.x,y1:GY-110,x2:t.x,y2:GY-20,l:.12});}
+    }
+  }
+  if(castles[0].hp<=0||castles[1].hp<=0)end(castles[1].hp<=0);
+  document.getElementById('ebar').style.width=(energy/ENERGY_MAX*100)+'%';
+  document.getElementById('etxt').textContent=Math.floor(energy)+' / '+ENERGY_MAX;
+  document.querySelectorAll('.card').forEach(b=>b.classList.toggle('off',energy<TYPES[b.dataset.t].cost));
+}
+
+function drawCastle(c){
+  const col=c.team?'#c9534a':'#4c7fd1',dk=c.team?'#8f342e':'#2f568f';
+  const x=c.x-40;
+  g.fillStyle=dk;g.fillRect(x,GY-120,80,120);
+  g.fillStyle=col;g.fillRect(x+6,GY-114,68,108);
+  for(let i=0;i<4;i++){g.fillStyle=dk;g.fillRect(x+i*22,GY-136,14,16);}
+  g.fillStyle='#2a1d05';g.fillRect(c.x-12,GY-44,24,44);
+  g.beginPath();g.arc(c.x,GY-44,12,Math.PI,0);g.fill();
+  g.fillStyle=dk;g.fillRect(c.x-3,GY-96,6,22);
+  const f=g.createLinearGradient(0,0,1,0);
+  g.fillStyle=col;g.beginPath();g.moveTo(c.x+3,GY-170);g.lineTo(c.x+32,GY-160);g.lineTo(c.x+3,GY-148);g.fill();
+  g.fillStyle=dk;g.fillRect(c.x,GY-172,3,40);
+  // barre de vie
+  const bw=90,r=Math.max(0,c.hp/c.max);
+  g.fillStyle='#0008';g.fillRect(c.x-bw/2,GY-192,bw,10);
+  g.fillStyle=c.team?'#e2574c':'#4c8be2';g.fillRect(c.x-bw/2,GY-192,bw*r,10);
+}
+function drawUnit(u){
+  const col=u.team?'#e2574c':'#4c8be2',dk=u.team?'#8f342e':'#2f568f';
+  const y=GY-u.r,s=u.team?-1:1;
+  if(u.t==='ram'){
+    g.fillStyle='#6b4a2b';g.fillRect(u.x-22,y-8,44,18);
+    g.fillStyle=dk;g.fillRect(u.x-22,y-14,44,8);
+    g.fillStyle='#bfc5d0';g.fillRect(u.x+s*22-4,y-4,10,10);
+    g.fillStyle='#222';g.beginPath();g.arc(u.x-12,GY-5,6,0,7);g.arc(u.x+12,GY-5,6,0,7);g.fill();
+  }else if(u.t==='archer'){
+    g.fillStyle=col;g.beginPath();g.moveTo(u.x,y-14);g.lineTo(u.x-12,GY);g.lineTo(u.x+12,GY);g.fill();
+    g.fillStyle='#f1d1a8';g.beginPath();g.arc(u.x,y-14,7,0,7);g.fill();
+    g.strokeStyle='#6b4a2b';g.lineWidth=3;g.beginPath();g.arc(u.x+s*10,y,12,-1.2,1.2,false);g.stroke();
+  }else{
+    g.fillStyle=col;g.beginPath();g.arc(u.x,y,u.r,0,7);g.fill();
+    g.fillStyle='#f1d1a8';g.beginPath();g.arc(u.x,y-6,6,0,7);g.fill();
+    g.fillStyle='#d8dde6';g.fillRect(u.x+s*10,y-12,4,22);
+    g.fillStyle=dk;g.fillRect(u.x-s*16-3,y-8,6,16);
+  }
+  const bw=26,r=u.hp/u.max;
+  g.fillStyle='#0008';g.fillRect(u.x-bw/2,y-u.r-18,bw,4);
+  g.fillStyle='#7bd36b';g.fillRect(u.x-bw/2,y-u.r-18,bw*Math.max(0,u.hp/TYPES[u.t].hp),4);
+}
+function draw(){
+  const sky=g.createLinearGradient(0,0,0,GY);sky.addColorStop(0,'#6fb7ec');sky.addColorStop(1,'#cfe9f7');
+  g.fillStyle=sky;g.fillRect(0,0,W,H);
+  g.fillStyle='#a9c9a0';g.beginPath();g.moveTo(0,GY-40);for(let x=0;x<=W;x+=80)g.lineTo(x,GY-40-((x/80)%2?35:10));g.lineTo(W,GY);g.lineTo(0,GY);g.fill();
+  g.fillStyle='#5f9f4a';g.fillRect(0,GY,W,H-GY);
+  g.fillStyle='#4d8a3b';g.fillRect(0,GY,W,10);
+  castles.forEach(drawCastle);
+  units.forEach(drawUnit);
+  for(const f of fx){
+    if(f.hit){g.fillStyle='#fff';g.beginPath();g.arc(f.x1,f.y1,8,0,7);g.fill();}
+    else{g.strokeStyle='#5a3b1a';g.lineWidth=2;g.beginPath();g.moveTo(f.x1,f.y1);g.lineTo(f.x2,f.y2);g.stroke();}
+  }
+}
+function loop(ts){
+  if(!running)return;
+  const dt=Math.min(.05,(ts-last)/1000);last=ts;
+  update(dt);draw();
+  if(running)requestAnimationFrame(loop);
+}
+function start(){
+  reset();running=true;last=performance.now();
+  document.getElementById('overlay').style.display='none';
+  requestAnimationFrame(loop);
+}
+function wins(){try{return +localStorage.getItem('st_wins')||0}catch(e){return 0}}
+function end(won){
+  running=false;over=true;
+  if(won){try{localStorage.setItem('st_wins',wins()+1)}catch(e){}}
+  draw();
+  document.getElementById('ot').textContent=won?'Victoire !':'Défaite';
+  document.getElementById('om').innerHTML=(won?'Le château rouge est en ruines.':'Ton château est tombé.')+' Victoires : <span>'+wins()+'</span>';
+  document.getElementById('play').textContent='Rejouer';
+  document.getElementById('overlay').style.display='flex';
+}
+document.getElementById('play').onclick=start;
+document.getElementById('wins').textContent=wins();
+document.querySelectorAll('.card').forEach(b=>b.onclick=()=>{
+  if(!running)return;
+  const t=b.dataset.t,c=TYPES[t].cost;
+  if(energy>=c){energy-=c;spawn(0,t);}
+});
+reset();draw();
+})();
+</script>
+</body>
+</html>
